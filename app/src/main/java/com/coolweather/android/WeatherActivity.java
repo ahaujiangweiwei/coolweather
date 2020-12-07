@@ -6,12 +6,16 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import android.annotation.SuppressLint;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
@@ -40,6 +44,7 @@ import okhttp3.Response;
 
 public class WeatherActivity extends AppCompatActivity {
 
+    private static final String TAG = "Weather";
     private ScrollView weatherLayout;
     private TextView titleCity;
     private TextView titleUpdateTime;
@@ -55,6 +60,9 @@ public class WeatherActivity extends AppCompatActivity {
     public SwipeRefreshLayout swipeRefresh;
     public DrawerLayout drawerLayout;
     private Button navButton;
+
+    public static final String ACTION_SERVICE_NEED = "action.ServiceNeed";
+    public ServiceNeedBroadcastReceiver broadcastReceiver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -89,11 +97,19 @@ public class WeatherActivity extends AppCompatActivity {
         String weatherString = prefs.getString("weather", null);
         final String weatherId;
 
+        /**
+         * 注册广播实例
+         */
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(ACTION_SERVICE_NEED);
+        broadcastReceiver = new ServiceNeedBroadcastReceiver();
+        registerReceiver(broadcastReceiver, intentFilter);
+
         if (weatherString != null) {
             //有缓存时直接解析天气数据
             Weather weather = Utility.handleWeatherResponse(weatherString);
             weatherId = weather.basic.weatherId;
-            showWeatherInfo(weather);
+            showWeatherInfo(weather,false);
         } else {
             //无缓存时去服务器查询天气
             weatherId = getIntent().getStringExtra("weather_id");
@@ -122,11 +138,19 @@ public class WeatherActivity extends AppCompatActivity {
         });
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        //注销广播
+        unregisterReceiver(broadcastReceiver);
+    }
+
     /**
      * 根据天气id请求城市天气信息
      */
 
     public void requestWeather(final String weatherId) {
+        Log.d(TAG, "requestWeather:1" + "weatherId:" + weatherId);
         String weatherUrl = "http://guolin.tech/api/weather?cityid=" + weatherId + "&key=49cfef4586b347de97f7f87f842e7d24";
         HttpUtil.sendOkHttpRequest(weatherUrl, new Callback() {
             @Override
@@ -135,7 +159,7 @@ public class WeatherActivity extends AppCompatActivity {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        Toast.makeText(WeatherActivity.this, "获取天气信息失败",Toast.LENGTH_SHORT).show();
+                        Toast.makeText(WeatherActivity.this, "获取天气信息失败", Toast.LENGTH_SHORT).show();
                         swipeRefresh.setRefreshing(false);
                     }
                 });
@@ -152,7 +176,7 @@ public class WeatherActivity extends AppCompatActivity {
                             @SuppressLint("CommitPrefEdits") SharedPreferences.Editor editor = PreferenceManager.getDefaultSharedPreferences(WeatherActivity.this).edit();
                             editor.putString("weather", responseText);
                             editor.apply();
-                            showWeatherInfo(weather);
+                            showWeatherInfo(weather,false);
                         } else {
                             Toast.makeText(WeatherActivity.this, "获取天气信息失败", Toast.LENGTH_SHORT).show();
                         }
@@ -194,7 +218,7 @@ public class WeatherActivity extends AppCompatActivity {
     /**
      * 处理并展示Weather实体类中的数据
      */
-    private void showWeatherInfo(Weather weather) {
+    private void showWeatherInfo(Weather weather,boolean isService) {
         String cityName = weather.basic.cityName;
         String updateTime = weather.basic.update.updateTime.split(" ")[1];
         String degree = weather.now.temperature + "℃";
@@ -203,13 +227,16 @@ public class WeatherActivity extends AppCompatActivity {
         titleUpdateTime.setText(updateTime);
         degreeText.setText(degree);
         weatherInfoText.setText(weatherInfo);
+//        Log.d(TAG, "weather"+weather.forecastList.toString());
         forecastLayout.removeAllViews();
         for (Forecast forecast : weather.forecastList) {
+            Log.d(TAG, "showWeatherInfo: 2");
             View view = LayoutInflater.from(this).inflate(R.layout.forecast_item, forecastLayout, false);
             TextView dateText = (TextView) view.findViewById(R.id.date_text);
             TextView infoText = (TextView) view.findViewById(R.id.info_text);
             TextView maxText = view.findViewById(R.id.max_text);
             TextView minText = view.findViewById(R.id.min_text);
+            Log.d(TAG, "showWeatherInfo: 2" + forecast.date);
             dateText.setText(forecast.date);
             infoText.setText(forecast.more.info);
             maxText.setText(forecast.temperature.max);
@@ -229,8 +256,28 @@ public class WeatherActivity extends AppCompatActivity {
         sportText.setText(sport);
         weatherLayout.setVisibility(View.VISIBLE);
 
-        Intent intent = new Intent(this, AutoUpdateService.class);
-        startService(intent);
+        if (!isService) {
+            Intent intent = new Intent(this, AutoUpdateService.class);
+            startService(intent);
+        }
     }
+
+
+    private class ServiceNeedBroadcastReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(WeatherActivity.this);
+            String weatherString = prefs.getString("weather", null);
+            if (weatherString != null) {
+                Weather weather = Utility.handleWeatherResponse(weatherString);
+                final String weatherId;
+                weatherId = weather.basic.weatherId;
+                showWeatherInfo(weather,true);
+            }
+
+        }
+    }
+
+
 
 }

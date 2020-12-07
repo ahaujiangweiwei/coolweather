@@ -10,7 +10,9 @@ import android.os.IBinder;
 import android.os.SystemClock;
 import android.preference.PreferenceManager;
 import android.util.Log;
+import android.view.View;
 
+import com.coolweather.android.WeatherActivity;
 import com.coolweather.android.gson.Weather;
 import com.coolweather.android.util.HttpUtil;
 import com.coolweather.android.util.Utility;
@@ -38,7 +40,7 @@ public class AutoUpdateService extends Service {
         updateBingPic();
         AlarmManager manager = (AlarmManager) getSystemService(ALARM_SERVICE);
 //        int anHour = 8 * 60 * 60 * 1000;//这是8小时的毫秒数
-        int anHour = 60 * 1000;
+        int anHour = 30 * 60 * 1000;//这是1分钟的毫秒数
         long triggerAtTime = SystemClock.elapsedRealtime() + anHour;
         Intent i = new Intent(this, AutoUpdateService.class);
         PendingIntent pi = PendingIntent.getService(this, 0, i, 0);
@@ -51,14 +53,15 @@ public class AutoUpdateService extends Service {
      * 更新天气信息
      */
     private void updateWeather() {
-        Log.d(TAG, "updateWeather: ");
+        Log.d(TAG, "updateWeather: 1");
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         String weatherString = prefs.getString("weather", null);
         if (weatherString != null) {
             //有缓存时直接解析天气数据
+
             Weather weather = Utility.handleWeatherResponse(weatherString);
             String weatherId = weather.basic.weatherId;
-
+            Log.d(TAG, "updateWeather: 2"+"weatherId:"+weatherId);
             String weatherUrl = "http://guolin.tech/api/weather?cityid=" + weatherId + "&key=49cfef4586b347de97f7f87f842e7d24";
             HttpUtil.sendOkHttpRequest(weatherUrl, new Callback() {
                 @Override
@@ -78,6 +81,9 @@ public class AutoUpdateService extends Service {
                 }
             });
         }
+        Intent intentBroadcastReceiver = new Intent();
+        intentBroadcastReceiver.setAction(WeatherActivity.ACTION_SERVICE_NEED);
+        sendBroadcast(intentBroadcastReceiver);
     }
 
     /**
